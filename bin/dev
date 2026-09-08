@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# macOS / Linux equivalent of START-DEMO-no-hardware.bat
+# Starts the mock reader, the mock EventzFlow server, and the dashboard.
+# Ctrl+C stops all three.
+#
+# Usage: bin/dev [--reader-port 6688] [--eventzflow-port 9000] [--dashboard-port 5050]
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+READER_PORT=6688
+EVENTZFLOW_PORT=9000
+DASHBOARD_PORT=5050
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --reader-port) READER_PORT="$2"; shift 2 ;;
+    --eventzflow-port) EVENTZFLOW_PORT="$2"; shift 2 ;;
+    --dashboard-port) DASHBOARD_PORT="$2"; shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+
+PIDS=()
+
+cleanup() {
+  echo ""
+  echo "Stopping..."
+  for pid in "${PIDS[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+python3 app/mock_reader.py --port "$READER_PORT" &
+PIDS+=($!)
+
+python3 app/mock_eventzflow.py --port "$EVENTZFLOW_PORT" &
+PIDS+=($!)
+
+python3 app/server.py --port "$DASHBOARD_PORT" &
+PIDS+=($!)
+
+echo "Mock reader:      tcp://127.0.0.1:$READER_PORT"
+echo "Mock EventzFlow:  http://127.0.0.1:$EVENTZFLOW_PORT"
+echo "Dashboard:        http://127.0.0.1:$DASHBOARD_PORT"
+echo ""
+echo "Press Ctrl+C to stop all three."
+
+wait

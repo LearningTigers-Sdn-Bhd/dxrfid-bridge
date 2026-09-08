@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DXRFID Dashboard</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --border: #e2e4e9; --text: #1c1f26;
+    --muted: #6b7280; --accent: #2563eb; --good: #16a34a; --bad: #dc2626;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,Roboto,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; overflow:hidden; }
+  header { flex:0 0 auto; padding:14px 20px; background:var(--panel); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--bad); flex-shrink:0; box-shadow:0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent); }
+  .dot.on { background:var(--good); box-shadow:0 0 0 3px color-mix(in srgb, var(--good) 18%, transparent); }
+  .tabs { flex:0 0 auto; }
+  .view { flex:1 1 auto; overflow-y:auto; min-height:0; }
+  .grid { display:grid; grid-template-columns:300px minmax(0, 1fr); grid-template-rows:minmax(0, 1fr); gap:18px; padding:20px; width:100%; height:100%; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; grid-template-rows:none; height:auto; } }
+  .col { display:flex; flex-direction:column; gap:18px; min-height:0; }
+  .logs-panel { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .subview { display:none; flex-direction:column; flex:1; min-height:0; }
+  .subview:not([hidden]) { display:flex; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+  .panel h2 { font-size:12.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; margin:0 0 12px; display:flex; align-items:center; }
+  label { display:block; font-size:12.5px; color:var(--muted); margin-bottom:4px; margin-top:10px; font-weight:500; }
+  label:first-of-type { margin-top:0; }
+  input, textarea { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:var(--mono); background:#fafafa; color:var(--text); transition:border-color .12s ease, box-shadow .12s ease; }
+  input:hover, textarea:hover { border-color:#c7cbd4; }
+  input:focus, textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); background:#fff; }
+  textarea { resize:vertical; min-height:70px; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button { cursor:pointer; border:none; border-radius:6px; padding:8px 13px; font-size:13px; font-weight:600; background:var(--accent); color:#fff; transition:filter .12s ease, transform .05s ease; }
+  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button:active:not(:disabled) { transform:translateY(1px); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button.secondary { background:#e9eaee; color:#1c1f26; }
+  button.secondary:hover:not(:disabled) { background:#dfe1e6; }
+  button.danger { background:#fee2e2; color:var(--bad); }
+  button.danger:hover:not(:disabled) { background:#fecaca; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .btnrow { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .save-bar { display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 18px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+  tbody tr:hover td { background:#f8f9fb; }
+  .badge { font-family:var(--mono); font-size:10px; padding:2px 6px; border-radius:4px; }
+  .badge.tx { background:#dbeafe; color:#1d4ed8; }
+  .badge.rx { background:#dcfce7; color:#15803d; }
+  .badge.sys { background:#f3e8ff; color:#7e22ce; }
+  .badge.api { background:#fef3c7; color:#b45309; }
+  #log { flex:1; min-height:0; overflow-y:auto; font-size:12.5px; border:1px solid var(--border); border-radius:6px; }
+  #log .line:last-child { border-bottom:none; }
+  #log .log-date:first-child { margin-top:0; }
+  .tags-scroll { flex:1; min-height:0; overflow-y:auto; border:1px solid var(--border); border-radius:6px; }
+  .tags-scroll table { width:100%; }
+  .tags-scroll table { table-layout:fixed; }
+  .tags-scroll th, .tags-scroll td { padding:9px 16px; }
+  /* ellipsis on data cells only — clipping the header cells would cut off their tooltips */
+  .tags-scroll td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tags-scroll th:first-child, .tags-scroll td:first-child { width:46%; }
+  .tags-scroll thead th { position:sticky; top:0; background:#fafbfc; z-index:3; }
+  /* last column would push its tooltip past the scroll box's right edge */
+  .tags-scroll th:last-child .info::after { left:auto; right:0; }
+  #tagFilter { margin-bottom:10px; }
+  #log .ts { color:var(--muted); flex-shrink:0; font-family:var(--mono); font-size:10.5px; white-space:nowrap; letter-spacing:-0.3px; margin-left:auto; }
+  #log .log-date { position:sticky; top:0; background:#fafbfc; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:9px 16px; z-index:1; }
+  #log .log-date:not(:first-child) { border-top:1px solid var(--border); margin-top:4px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--muted); margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border); }
+  .legend span.badge { margin-right:3px; }
+  .info { position:relative; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; font-weight:400; font-style:normal; cursor:pointer; margin-left:4px; vertical-align:middle; opacity:.75; transition:opacity .12s ease; }
+  .info:hover, .info:focus-visible, .info.pinned { opacity:1; }
+  h2 .info { margin-left:6px; }
+  label .info { margin-left:4px; }
+  button .info { color:inherit; }
+  .info::after {
+    content: attr(data-tip);
+    position:absolute; top:130%; left:0; z-index:80;
+    background:#1c1f26; color:#f4f5f7; padding:7px 9px; border-radius:6px;
+    font-size:11px; font-weight:400; font-style:normal; line-height:1.45;
+    text-transform:none; letter-spacing:normal;
+    width:max-content; max-width:260px; text-align:left;
+    opacity:0; visibility:hidden; transform:translateY(-4px);
+    transition:opacity .12s ease, transform .12s ease; pointer-events:none;
+  }
+  .info:hover::after, .info:focus-visible::after, .info.pinned::after {
+    opacity:1; visibility:visible; transform:translateY(0);
+  }
+  #log .line { padding:9px 16px; border-bottom:1px solid #f0f1f3; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  #log .text { flex:1; min-width:0; color:var(--text); }
+  #log details { flex-basis:100%; }
+  #log summary { cursor:pointer; color:var(--muted); font-size:10.5px; list-style:none; }
+  #log summary::-webkit-details-marker { display:none; }
+  #log summary:before { content:"▸ raw data"; }
+  #log details[open] summary:before { content:"▾ raw data"; }
+  #log .hex { color:#374151; word-break:break-all; font-family:var(--mono); font-size:11px; margin-top:2px; }
+  .result-box { margin-top:12px; padding:11px 12px; background:#f8f9fb; border:1px solid var(--border); border-radius:6px; font-family:var(--mono); font-size:12px; line-height:1.55; white-space:pre-wrap; word-break:break-all; max-height:220px; overflow-y:auto; }
+  .statusline { display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:var(--muted); margin-top:10px;}
+  .pill { padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700; }
+  .pill.good { background:#dcfce7; color:#15803d; }
+  .pill.bad { background:#fee2e2; color:#b91c1c; }
+  .diag-item { display:flex; align-items:flex-start; gap:9px; padding:9px 0; border-bottom:1px solid #f0f1f3; }
+  .diag-item:last-child { border-bottom:none; }
+  .diag-dot { width:9px; height:9px; border-radius:50%; margin-top:5px; flex-shrink:0; background:var(--muted); }
+  .diag-dot.good { background:var(--good); }
+  .diag-dot.bad { background:var(--bad); }
+  .diag-body b { font-size:13px; }
+  .diag-body p { margin:3px 0 0; font-size:12.5px; color:var(--muted); }
+  .health-strip { font-size:12px; font-weight:600; padding:4px 12px; border-radius:20px; }
+  .health-strip.good { background:#dcfce7; color:#15803d; }
+  .health-strip.bad { background:#fee2e2; color:#b91c1c; }
+  .health-strip.unknown { background:#f3f4f6; color:#6b7280; }
+  .tabs { display:flex; gap:4px; padding:0 20px; background:var(--panel); border-bottom:1px solid var(--border); }
+  .tab-btn { background:none; border:none; border-radius:0; color:var(--muted); font-weight:600; font-size:13px; padding:12px 8px; box-shadow:none; border-bottom:2px solid transparent; transition:color .12s ease; }
+  .tab-btn:hover { color:var(--text); }
+  .tab-btn.active { color:var(--accent); border-bottom:2px solid var(--accent); }
+  .subtabs { display:flex; gap:16px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+  .subtab-btn { background:none; border:none; border-radius:0; color:var(--muted); font-weight:600; font-size:12.5px; padding:0 0 9px; box-shadow:none; border-bottom:2px solid transparent; transition:color .12s ease; }
+  .subtab-btn:hover { color:var(--text); }
+  .subtab-btn.active { color:var(--accent); border-bottom:2px solid var(--accent); }
+  .view[hidden] { display:none; }
+  .input-group { display:flex; gap:0; }
+  .input-group input { border-top-right-radius:0; border-bottom-right-radius:0; }
+  .input-group button { border-top-left-radius:0; border-bottom-left-radius:0; padding:7px 10px; }
+  .target-line { font-size:12.5px; color:var(--muted); background:#f8f9fb; border:1px solid var(--border); border-radius:6px; padding:9px 11px; font-family:var(--mono); word-break:break-all; line-height:1.5; }
+  .target-line a { color:var(--accent); text-decoration:none; font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-weight:600; }
+  .target-line a:hover { text-decoration:underline; }
+  .checkline { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); margin-top:10px; }
+  .checkline input { width:auto; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="connDot"></span>
+  <h1>DXRFID Dashboard</h1>
+  <span class="muted" id="connLabel">disconnected</span>
+  <span style="flex:1"></span>
+  <span class="health-strip unknown" id="healthStrip" title="Overall system health, from the last diagnostic check">not checked yet</span>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tabDashboard">Dashboard</button>
+  <button class="tab-btn" id="tabApiTest">Test</button>
+  <button class="tab-btn" id="tabSettings">Settings</button>
+</div>
+
+<div class="grid view" id="viewDashboard">
+  <div class="col">
+    <div class="panel">
+      <h2>System Health Check <span class="info" data-tip="Checks all three links at once — scanner, EventzFlow, encoder. Run this first when something seems wrong.">ⓘ</span></h2>
+      <div class="btnrow">
+        <button id="btnDiagnose">Run Diagnostic Check</button>
+      </div>
+      <div id="diagResults" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Device Connection <span class="info" data-tip="Opens or closes the connection to the scanner. Change which scanner in Settings.">ⓘ</span></h2>
+      <div class="target-line" id="connTargetLine">no reader configured — <a href="#" data-goto-settings>set one up in Settings</a></div>
+      <div class="btnrow">
+        <button id="btnConnect">Connect</button>
+        <button id="btnDisconnect" class="secondary">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Auto-Forward <span class="info" data-tip="Runs unattended: watches the scanner and sends each new tag to your server automatically. This is what a live gate runs.">ⓘ</span></h2>
+      <div class="target-line" id="dedupTargetLine">—</div>
+      <div class="btnrow">
+        <button id="btnToggleAutoForward" class="secondary">Turn On</button>
+      </div>
+      <div class="statusline">
+        <span id="forwardStats" class="muted">not running</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Registration Encoder <span class="info" data-tip="Writes to a blank tag using the USB encoder at the registration desk. Needs the encoder helper running on the Windows PC.">ⓘ</span></h2>
+      <label>Tag UID (hex) <span class="info" data-tip="Serial number of the tag you're encoding — scan it or read it off the tag first.">ⓘ</span></label>
+      <input id="encodeUid" placeholder="e.g. E004000000000000" />
+      <label>AFI value <span class="info" data-tip="One byte written to the tag as a category marker (e.g. VIP vs General). Ask EventzFlow which value to use.">ⓘ</span></label>
+      <input id="encodeAfi" value="0" />
+      <div class="btnrow">
+        <button id="btnEncode" class="secondary">Encode Tag</button>
+      </div>
+      <div class="result-box" id="encodeResult">Requires the encoder helper running on the Windows registration PC — not available from this preview machine.</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel logs-panel">
+      <div class="subtabs">
+        <button class="subtab-btn active" id="subtabActivity">Activity Log</button>
+        <button class="subtab-btn" id="subtabTags">Tags Seen</button>
+      </div>
+
+      <div id="subviewActivity" class="subview">
+        <div class="legend">
+          <span><span class="badge tx">tx</span> sent to scanner</span>
+          <span><span class="badge rx">rx</span> from scanner</span>
+          <span><span class="badge sys">sys</span> connect/disconnect</span>
+          <span><span class="badge api">api</span> your live server</span>
+        </div>
+        <div id="log"></div>
+      </div>
+
+      <div id="subviewTags" class="subview" hidden>
+        <input id="tagFilter" placeholder="Filter by UID..." />
+        <div class="tags-scroll">
+          <table>
+            <thead><tr><th>UID <span class="info" data-tip="The tag's permanent serial number, burned in at the factory.">ⓘ</span></th><th>DSFID <span class="info" data-tip="Data Storage Format Identifier — describes what kind of data the tag holds. 0x00 means plain/unformatted.">ⓘ</span></th><th>Count <span class="info" data-tip="Times this tag has been read since the dashboard started. A high number just means it sat in range — not a problem.">ⓘ</span></th></tr></thead>
+            <tbody id="tagRows"><tr><td colspan="3" class="muted">none yet</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid view" id="viewApiTest" hidden>
+  <div class="col" style="grid-column:1/-1; max-width:640px">
+    <div class="panel">
+      <h2>1 · Reader Test <span class="info" data-tip="Check the scanner by hand. Auto-Forward does this for you during normal running.">ⓘ</span></h2>
+      <div class="target-line" id="readerTestTargetLine">—</div>
+      <div class="btnrow">
+        <button id="btnInventory">Read Tags <span class="info" data-tip="Asks the scanner which tags it can see right now.">ⓘ</span></button>
+        <button id="btnInfo" class="secondary">Get Reader Info <span class="info" data-tip="Asks the scanner to identify itself, confirming it's responding.">ⓘ</span></button>
+      </div>
+      <div class="result-box" id="actionResult">no action run yet</div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Live Server / API Test <span class="info" data-tip="Checks the dashboard can reach EventzFlow, and optionally sends it a test batch of tag data.">ⓘ</span></h2>
+      <div class="target-line" id="targetLine">no API URL configured — <a href="#" id="goToSettingsLink">set one up in Settings</a></div>
+      <div class="btnrow">
+        <button id="btnGet" class="secondary">Test GET <span class="info" data-tip="Checks your server is reachable. Nothing is sent or changed.">ⓘ</span></button>
+      </div>
+      <label>POST payload <span class="info" data-tip="The data that will be sent. Auto-fills from the last tags read — edit if your server expects a different shape.">ⓘ</span></label>
+      <textarea id="apiPayload">{}</textarea>
+      <div class="btnrow">
+        <button id="btnPost">Send POST <span class="info" data-tip="Really sends this data to your server and shows the reply.">ⓘ</span></button>
+        <button id="btnPreview" class="secondary">Preview Raw Request <span class="info" data-tip="Shows the exact request — method, URL, headers, body — without sending it.">ⓘ</span></button>
+      </div>
+      <div class="checkline">
+        <input type="checkbox" id="previewReveal" />
+        <label style="margin:0" for="previewReveal">show credentials in preview (otherwise masked)</label>
+      </div>
+      <div class="result-box" id="rawPreview" hidden>—</div>
+      <div class="statusline">
+        <span id="apiStatus" class="muted">no request sent</span>
+      </div>
+      <div class="result-box" id="apiResult">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid view" id="viewSettings" hidden>
+  <div class="col" style="grid-column:1/-1; max-width:640px">
+    <div class="panel">
+      <h2>Device Connection <span class="info" data-tip="Which scanner to talk to. Used by Connect, Auto-Forward and the health check.">ⓘ</span></h2>
+      <label>Reader host <span class="info" data-tip="The scanner's IP address on the network, e.g. 192.168.1.50.">ⓘ</span></label>
+      <input id="host" value="127.0.0.1" />
+      <label>Reader port <span class="info" data-tip="Network port on the reader. Leave at 6688 unless told otherwise.">ⓘ</span></label>
+      <input id="port" value="6688" />
+      <label>Com address <span class="info" data-tip="Picks one scanner when several share a line. 0xFF talks to all of them.">ⓘ</span></label>
+      <input id="comAdr" value="0xFF" />
+    </div>
+
+    <div class="panel">
+      <h2>Auto-Forward Settings <span class="info" data-tip="How Auto-Forward suppresses duplicate reads of the same tag.">ⓘ</span></h2>
+      <label>Dedup window (seconds) <span class="info" data-tip="A tag in range is re-read many times a second. This forwards the same tag at most once per this many seconds, so one person standing there can't flood your server.">ⓘ</span></label>
+      <input id="dedupSeconds" value="5" />
+    </div>
+
+    <div class="panel">
+      <h2>API &amp; Integration Settings <span class="info" data-tip="How to reach EventzFlow (or any live server). Used by Auto-Forward, the Test tab and the health check.">ⓘ</span></h2>
+      <label>API base URL <span class="info" data-tip="Where tag events get sent, e.g. https://your-server.com/api/tags">ⓘ</span></label>
+      <input id="apiUrl" placeholder="https://..." />
+      <label>Authorization header name <span class="info" data-tip="Header your server expects credentials in — almost always Authorization.">ⓘ</span></label>
+      <input id="apiAuthHeader" value="Authorization" />
+      <label>Authorization value <span class="info" data-tip="Your API key or token, e.g. Bearer abc123. Click the eye to reveal it.">ⓘ</span></label>
+      <div class="input-group">
+        <input id="apiAuthValue" type="password" placeholder="Bearer ..." />
+        <button type="button" class="secondary" id="btnRevealAuth" title="Show/hide">👁</button>
+      </div>
+      <label>Content-Type <span class="info" data-tip="Format of the data being sent. Leave as application/json unless told otherwise.">ⓘ</span></label>
+      <input id="apiContentType" value="application/json" />
+    </div>
+
+    <div class="panel">
+      <h2>Registration Encoder <span class="info" data-tip="The USB encoder at the registration desk, driven by encoder_service.py on the Windows PC.">ⓘ</span></h2>
+      <label>Encoder helper URL <span class="info" data-tip="Where encoder_service.py is reachable — usually http://127.0.0.1:7000 on the registration PC.">ⓘ</span></label>
+      <input id="encoderUrl" value="http://127.0.0.1:7000" />
+    </div>
+
+    <div class="save-bar">
+      <button id="btnSaveSettings">Save Settings</button>
+      <span class="muted" id="settingsSavedMsg"></span>
+      <span class="muted" style="margin-left:auto">Saves everything on this page</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastTags = [];
+
+function loadSettings() {
+  const s = JSON.parse(localStorage.getItem('dxrfid_settings') || '{}');
+  if (s.host) $('host').value = s.host;
+  if (s.port) $('port').value = s.port;
+  if (s.comAdr) $('comAdr').value = s.comAdr;
+  if (s.apiUrl) $('apiUrl').value = s.apiUrl;
+  if (s.apiAuthHeader) $('apiAuthHeader').value = s.apiAuthHeader;
+  if (s.apiAuthValue) $('apiAuthValue').value = s.apiAuthValue;
+  if (s.apiContentType) $('apiContentType').value = s.apiContentType;
+  if (s.encoderUrl) $('encoderUrl').value = s.encoderUrl;
+  if (s.dedupSeconds) $('dedupSeconds').value = s.dedupSeconds;
+  renderTargetLine();
+  renderConnTargetLine();
+  renderDedupTargetLine();
+}
+function saveSettings() {
+  const settings = {
+    host: $('host').value, port: $('port').value, comAdr: $('comAdr').value,
+    apiUrl: $('apiUrl').value, apiAuthHeader: $('apiAuthHeader').value,
+    apiAuthValue: $('apiAuthValue').value, apiContentType: $('apiContentType').value,
+    encoderUrl: $('encoderUrl').value, dedupSeconds: $('dedupSeconds').value,
+  };
+  localStorage.setItem('dxrfid_settings', JSON.stringify(settings));
+  // push the API/auth settings to the backend too, so it applies them on every request
+  api('/api/settings', 'POST', {
+    api_auth_header: settings.apiAuthHeader,
+    api_auth_value: settings.apiAuthValue,
+    api_content_type: settings.apiContentType,
+    encoder_url: settings.encoderUrl,
+    dedup_seconds: parseFloat(settings.dedupSeconds || '5'),
+  });
+  renderTargetLine();
+  renderConnTargetLine();
+  renderDedupTargetLine();
+}
+
+function maskValue(v) {
+  if (!v) return '(none set)';
+  return v.length <= 6 ? '••••••' : v.slice(0, 3) + '…' + v.slice(-3);
+}
+
+function renderTargetLine() {
+  const url = $('apiUrl').value.trim();
+  const el = $('targetLine');
+  if (!url) {
+    el.innerHTML = 'No API URL configured yet — <a href="#" data-goto-settings>set one up in Settings</a>';
+    return;
+  }
+  el.innerHTML = `Target: <b>${url}</b> &nbsp;·&nbsp; Auth: ${maskValue($('apiAuthValue').value)} — <a href="#" data-goto-settings>edit in Settings</a>`;
+}
+
+function renderConnTargetLine() {
+  const host = $('host').value.trim();
+  const port = $('port').value.trim();
+  const comAdr = $('comAdr').value.trim();
+  const html = (!host || !port)
+    ? 'No reader configured — <a href="#" data-goto-settings>set one up in Settings</a>'
+    : `Target: <b>${host}:${port}</b> &nbsp;·&nbsp; Com addr: ${comAdr || '0xFF'} — <a href="#" data-goto-settings>edit in Settings</a>`;
+  $('connTargetLine').innerHTML = html;
+  $('readerTestTargetLine').innerHTML = html;
+}
+
+function renderDedupTargetLine() {
+  const dedup = $('dedupSeconds').value.trim() || '5';
+  $('dedupTargetLine').innerHTML = `Dedup window: <b>${dedup}s</b> — <a href="#" data-goto-settings>edit in Settings</a>`;
+}
+
+function showView(name) {
+  $('viewDashboard').hidden = name !== 'dashboard';
+  $('viewApiTest').hidden = name !== 'apitest';
+  $('viewSettings').hidden = name !== 'settings';
+  $('tabDashboard').classList.toggle('active', name === 'dashboard');
+  $('tabApiTest').classList.toggle('active', name === 'apitest');
+  $('tabSettings').classList.toggle('active', name === 'settings');
+}
+$('tabDashboard').onclick = () => showView('dashboard');
+$('tabApiTest').onclick = () => showView('apitest');
+$('tabSettings').onclick = () => showView('settings');
+
+function showSubview(name) {
+  $('subviewTags').hidden = name !== 'tags';
+  $('subviewActivity').hidden = name !== 'activity';
+  $('subtabTags').classList.toggle('active', name === 'tags');
+  $('subtabActivity').classList.toggle('active', name === 'activity');
+}
+$('subtabTags').onclick = () => showSubview('tags');
+$('subtabActivity').onclick = () => showSubview('activity');
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-goto-settings]')) { e.preventDefault(); showView('settings'); }
+});
+
+$('btnRevealAuth').onclick = () => {
+  const inp = $('apiAuthValue');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+};
+
+$('btnSaveSettings').onclick = () => {
+  saveSettings();
+  const msg = $('settingsSavedMsg');
+  msg.textContent = 'Saved ✓';
+  setTimeout(() => { msg.textContent = ''; }, 2000);
+};
+
+function buildRawPreview() {
+  const apiUrl = $('apiUrl').value.trim();
+  const authHeader = $('apiAuthHeader').value || 'Authorization';
+  const authValue = $('apiAuthValue').value;
+  const contentType = $('apiContentType').value || 'application/json';
+  const reveal = $('previewReveal').checked;
+  let payload;
+  try { payload = JSON.parse($('apiPayload').value || '{}'); } catch (e) { payload = {}; }
+
+  let host = '(no URL configured)', pathPart = '/';
+  try {
+    const u = new URL(apiUrl);
+    host = u.host;
+    pathPart = u.pathname + u.search;
+  } catch (e) { /* leave defaults */ }
+
+  let text = `POST ${pathPart} HTTP/1.1\nHost: ${host}\n`;
+  if (authValue) text += `${authHeader}: ${reveal ? authValue : maskValue(authValue)}\n`;
+  text += `Content-Type: ${contentType}\n\n`;
+  text += JSON.stringify(payload, null, 2);
+  return text;
+}
+
+let autoForwardOn = false;
+async function refreshForwardStats() {
+  const s = await api('/api/forward-stats');
+  autoForwardOn = s.auto_forward;
+  $('btnToggleAutoForward').textContent = autoForwardOn ? 'Turn Off' : 'Turn On';
+  $('btnToggleAutoForward').className = autoForwardOn ? '' : 'secondary';
+  $('forwardStats').textContent = autoForwardOn
+    ? `Running — forwarded ${s.forwarded_count}, suppressed ${s.suppressed_count} duplicate(s)`
+    : `Off — forwarded ${s.forwarded_count}, suppressed ${s.suppressed_count} duplicate(s) so far`;
+}
+$('btnToggleAutoForward').onclick = async () => {
+  const dedup = parseFloat($('dedupSeconds').value || '5');
+  await api('/api/settings', 'POST', { auto_forward: !autoForwardOn, dedup_seconds: dedup });
+  refreshForwardStats();
+  refreshLog();
+};
+
+$('btnPreview').onclick = () => {
+  const box = $('rawPreview');
+  box.hidden = !box.hidden;
+  if (!box.hidden) box.textContent = buildRawPreview();
+};
+$('previewReveal').addEventListener('change', () => {
+  const box = $('rawPreview');
+  if (!box.hidden) box.textContent = buildRawPreview();
+});
+
+async function api(path, method='GET', body=null) {
+  const opts = { method };
+  if (body !== null) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  return res.json();
+}
+
+async function refreshStatus() {
+  const s = await api('/api/status');
+  $('connDot').classList.toggle('on', s.connected);
+  $('connLabel').textContent = s.connected ? `connected to ${s.host}:${s.port}` : 'disconnected';
+}
+
+function fmtDate(ts) {
+  return new Date(ts*1000).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+function fmtTime(ts) {
+  return new Date(ts*1000).toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true});
+}
+
+async function refreshLog() {
+  const entries = await api('/api/log');
+  const el = $('log');
+  let html = '';
+  let lastDate = null;
+  for (const e of entries) {
+    const date = fmtDate(e.ts);
+    if (date !== lastDate) {
+      html += `<div class="log-date">${date}</div>`;
+      lastDate = date;
+    }
+    html += `
+    <div class="line">
+      <span class="badge ${e.dir}">${e.dir}</span>
+      <span class="text">${e.summary || ''}</span>
+      <span class="ts">${fmtTime(e.ts)}</span>
+      ${e.hex ? `<details><summary></summary><div class="hex">${e.hex}</div></details>` : ''}
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderTagRows() {
+  const filter = $('tagFilter').value.trim().toLowerCase();
+  const tags = filter ? lastTags.filter(t => t.uid.toLowerCase().includes(filter)) : lastTags;
+  const rows = $('tagRows');
+  if (!lastTags.length) { rows.innerHTML = '<tr><td colspan="3" class="muted">none yet</td></tr>'; return; }
+  if (!tags.length) { rows.innerHTML = '<tr><td colspan="3" class="muted">no tags match that filter</td></tr>'; return; }
+  rows.innerHTML = tags.map(t => `<tr><td>${t.uid}</td><td>0x${t.dsfid.toString(16).padStart(2,'0')}</td><td>${t.count}</td></tr>`).join('');
+}
+$('tagFilter').addEventListener('input', renderTagRows);
+
+async function refreshTags() {
+  lastTags = await api('/api/tags');
+  renderTagRows();
+}
+
+$('btnConnect').onclick = async () => {
+  saveSettings();
+  const r = await api('/api/connect', 'POST', { host: $('host').value, port: parseInt($('port').value, 10) });
+  await api('/api/settings', 'POST', { com_adr: $('comAdr').value });
+  if (!r.ok && r.error) alert('Connect failed: ' + r.error);
+  refreshStatus();
+};
+$('btnDisconnect').onclick = async () => { await api('/api/disconnect', 'POST', {}); refreshStatus(); };
+
+$('btnInventory').onclick = async () => {
+  const r = await api('/api/inventory', 'POST', {});
+  $('actionResult').textContent = r.ok ? JSON.stringify(r.tags, null, 2) : ('error: ' + r.error);
+  refreshTags(); refreshLog();
+};
+$('btnInfo').onclick = async () => {
+  const r = await api('/api/info', 'POST', {});
+  $('actionResult').textContent = r.ok ? (r.info || '(no info returned)') : ('error: ' + r.error);
+  refreshLog();
+};
+
+$('btnGet').onclick = async () => {
+  saveSettings();
+  const url = $('apiUrl').value.trim();
+  if (!url) return alert('Enter an API URL first');
+  $('apiStatus').textContent = 'requesting...';
+  const r = await api('/api/test-get', 'POST', { url });
+  if (r.ok) {
+    $('apiStatus').innerHTML = `<span class="pill good">HTTP ${r.result.status}</span>`;
+    $('apiResult').textContent = r.result.body;
+  } else {
+    $('apiStatus').innerHTML = `<span class="pill bad">failed</span>`;
+    $('apiResult').textContent = r.error;
+  }
+};
+$('btnPost').onclick = async () => {
+  saveSettings();
+  const url = $('apiUrl').value.trim();
+  if (!url) return alert('Enter an API URL first');
+  let payload;
+  try { payload = JSON.parse($('apiPayload').value || '{}'); } catch(e) { return alert('Invalid JSON payload'); }
+  $('apiStatus').textContent = 'sending...';
+  const r = await api('/api/test-post', 'POST', { url, payload });
+  if (r.ok) {
+    $('apiStatus').innerHTML = `<span class="pill good">HTTP ${r.result.status}</span>`;
+    $('apiResult').textContent = r.result.body;
+  } else {
+    $('apiStatus').innerHTML = `<span class="pill bad">failed</span>`;
+    $('apiResult').textContent = r.error;
+  }
+};
+
+$('btnDiagnose').onclick = async () => {
+  $('diagResults').innerHTML = '<p class="muted">checking...</p>';
+  const r = await api('/api/diagnostics', 'POST', {});
+  const results = r.ok ? r.results : [];
+  $('diagResults').innerHTML = results.map(item => `
+    <div class="diag-item">
+      <span class="diag-dot ${item.ok ? 'good' : 'bad'}"></span>
+      <div class="diag-body"><b>${item.label}</b><p>${item.detail}</p></div>
+    </div>`).join('');
+  const allGood = results.length > 0 && results.every(x => x.ok);
+  const strip = $('healthStrip');
+  strip.className = 'health-strip ' + (allGood ? 'good' : 'bad');
+  strip.textContent = allGood ? 'All systems OK' : 'Needs attention';
+  refreshLog();
+};
+
+$('btnEncode').onclick = async () => {
+  const uid = $('encodeUid').value.trim();
+  if (!uid) return alert('Enter the tag UID first');
+  const afi = parseInt($('encodeAfi').value || '0', 10);
+  $('encodeResult').textContent = 'encoding...';
+  const r = await api('/api/encode', 'POST', { uid, afi });
+  $('encodeResult').textContent = r.ok
+    ? (r.result?.detail || 'Done')
+    : ('Could not encode: ' + r.error);
+  refreshLog();
+};
+
+// prefill POST payload with last read tags for convenience
+$('btnInventory').addEventListener('click', () => {
+  setTimeout(() => {
+    if (lastTags.length) $('apiPayload').value = JSON.stringify({ tags: lastTags }, null, 2);
+  }, 300);
+});
+
+function setupInfoTips() {
+  document.querySelectorAll('.info').forEach(el => {
+    el.setAttribute('tabindex', '0');  // keyboard/focus accessible too
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const wasPinned = el.classList.contains('pinned');
+      document.querySelectorAll('.info.pinned').forEach(other => other.classList.remove('pinned'));
+      if (!wasPinned) el.classList.add('pinned');
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.info.pinned').forEach(el => el.classList.remove('pinned'));
+  });
+}
+
+setupInfoTips();
+loadSettings();
+refreshStatus();
+refreshTags();
+refreshLog();
+refreshForwardStats();
+setInterval(refreshStatus, 2000);
+setInterval(refreshLog, 1500);
+setInterval(refreshForwardStats, 2000);
+</script>
+</body>
+</html>

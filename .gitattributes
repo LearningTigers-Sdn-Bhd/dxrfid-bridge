@@ -1,0 +1,15 @@
+# Windows launchers must keep CRLF or cmd.exe can mis-parse them
+*.bat           text eol=crlf
+
+# Shell launchers must keep LF even if checked out on Windows
+bin/dev         text eol=lf
+*.sh            text eol=lf
+
+# Everything else: normalise in the repo, native on checkout
+*.py            text
+*.md            text
+*.html          text
+
+# Binary — never touch
+*.dll           binary
+*.so            binary
