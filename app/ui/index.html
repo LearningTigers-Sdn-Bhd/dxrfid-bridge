@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>DXRFID Bridge</title>
+<style>
+  /* Command deck: left rail + full-bleed workspace. Zinc neutrals,
+     one teal accent. Type hierarchy does the work; chrome stays quiet. */
+  /* dark palette: default, explicit dark, or system-with-dark-OS */
+  :root, [data-theme="dark"], [data-theme="system"] {
+    color-scheme: dark;
+    --bg: #09090b;
+    --bg-soft: #101013;
+    --surface: #141417;
+    --inset: #0c0c0f;
+    --line: #2e2e36;
+    --line-soft: #26262d;
+    --ink: #f4f4f5;
+    --ink-2: #b8b8c0;
+    --ink-3: #8e8e99;
+    --accent: #2dd4bf;
+    --accent-dim: rgba(45,212,191,.12);
+    --accent-text: #5eead4;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f4f5;
+    --bg-soft: #ececef;
+    --surface: #ffffff;
+    --inset: #f4f4f5;
+    --line: #d4d4d8;
+    --line-soft: #dddde1;
+    --ink: #18181b;
+    --ink-2: #3f3f46;
+    --ink-3: #71717a;
+    --accent: #0d9488;
+    --accent-dim: rgba(13,148,136,.09);
+    --accent-text: #0f766e;
+    --good: #16a34a;
+    --warn: #b45309;
+    --bad: #dc2626;
+    --shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                 "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.5; letter-spacing: -.003em;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    display: flex; overflow: hidden;
+    transition: background .2s ease, color .2s ease;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+
+  /* ============ rail ============ */
+  .rail {
+    flex: 0 0 60px; display: flex; flex-direction: column; align-items: center;
+    padding: 12px 0; gap: 4px;
+    background: var(--bg-soft); border-right: 1px solid var(--line-soft);
+  }
+  .rail .mark {
+    width: 36px; height: 36px; margin-bottom: 14px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-dim); color: var(--accent-text);
+    font-weight: 800; font-size: 13px; letter-spacing: -.02em;
+  }
+  .rail button {
+    width: 44px; padding: 7px 0 6px; border: none; background: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    color: var(--ink-3); border-radius: 10px; transition: color .15s, background .15s;
+  }
+  .rail button svg { width: 18px; height: 18px; }
+  .rail button span { font-size: 10px; font-weight: 650; letter-spacing: .04em; }
+  .rail button:hover { color: var(--ink-2); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+  .rail button.active { color: var(--accent-text); background: var(--accent-dim); }
+  .rail .spacer { flex: 1; }
+  .rail .theme-btn { position: relative; }
+  .rail .icon-sun, .rail .icon-moon, .rail .icon-auto { display: none; }
+  [data-theme="light"] .icon-sun { display: block; }
+  [data-theme="dark"] .icon-moon { display: block; }
+  [data-theme="system"] .icon-auto { display: block; }
+  /* system mode with a light OS: flip the dark defaults above */
+  @media (prefers-color-scheme: light) {
+    [data-theme="system"] {
+      color-scheme: light;
+      --bg: #f4f4f5;
+      --bg-soft: #ececef;
+      --surface: #ffffff;
+      --inset: #f4f4f5;
+      --line: #d4d4d8;
+      --line-soft: #dddde1;
+      --ink: #18181b;
+      --ink-2: #3f3f46;
+      --ink-3: #71717a;
+      --accent: #0d9488;
+      --accent-dim: rgba(13,148,136,.09);
+      --accent-text: #0f766e;
+      --good: #16a34a;
+      --warn: #b45309;
+      --bad: #dc2626;
+      --shadow: 0 1px 2px rgba(0,0,0,.06);
+    }
+  }
+
+  /* ============ shell ============ */
+  .shell { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* topbar */
+  .topbar {
+    flex: 0 0 48px; display: flex; align-items: center; gap: 18px;
+    padding: 0 20px; border-bottom: 1px solid var(--line-soft);
+    background: var(--bg);
+  }
+  .topbar .title { font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
+  .topbar .crumb { color: var(--ink-3); font-size: 13.5px; }
+  .pipes { display: flex; gap: 14px; margin-left: 6px; }
+  .pipe { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 550; color: var(--ink-3); }
+  .pipe .led { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+  .pipe.on { color: var(--ink-2); } .pipe.on .led { background: var(--good); }
+  .pipe.down { color: var(--bad); } .pipe.down .led { background: var(--bad); }
+  .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+  .kbd-hint { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 5px; }
+  kbd {
+    font-family: inherit; font-size: 11px; font-weight: 600; color: var(--ink-2);
+    padding: 2px 5px; background: var(--surface);
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+  }
+
+  /* workspace */
+  .workspace { flex: 1; overflow: hidden; display: flex; min-height: 0; }
+  .pane-view { display: none; flex: 1; min-height: 0; }
+  .pane-view.active { display: flex; }
+
+  /* ============ desk: split panes ============ */
+  .split-l {
+    flex: 0 0 400px; display: flex; flex-direction: column;
+    border-right: 1px solid var(--line-soft); min-height: 0;
+  }
+  .pane-head {
+    flex: 0 0 auto; padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .pane-head h2 { font-size: 13px; font-weight: 650; color: var(--ink-2); letter-spacing: .01em; }
+  .pane-body { flex: 1; overflow-y: auto; padding: 16px 18px; min-height: 0; }
+  .split-r { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-soft); }
+
+  .scanbox { position: relative; }
+  .scanbox svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--ink-3); pointer-events: none; }
+  .scanbox input { padding-left: 36px !important; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px !important; }
+
+  input, select {
+    width: 100%; padding: 8px 11px; font: inherit; font-size: 13.5px;
+    color: var(--ink); background: var(--inset);
+    border: 1px solid var(--line); border-radius: 8px;
+    transition: border-color .15s, box-shadow .15s, background .2s;
+  }
+  input::placeholder { color: var(--ink-3); }
+  input:focus, select:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  select { appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+    background-size: 5px 5px; background-repeat: no-repeat; }
+
+  .seg { display: flex; gap: 2px; background: var(--inset); border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin: 14px 0 8px; }
+  .seg button {
+    flex: 1; border: none; background: none; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-3);
+    padding: 5px 0; border-radius: 6px; transition: all .15s;
+  }
+  .seg button.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+  .hits { margin-top: 10px; display: flex; flex-direction: column; }
+  .hit {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 8px 10px; margin: 0 -10px; cursor: pointer; color: var(--ink);
+    background: none; border: none; border-radius: 7px; transition: background .12s;
+  }
+  .hit:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+  .hit .who { flex: 1; min-width: 0; }
+  .hit .who b { display: block; font-size: 13.5px; font-weight: 580; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hit .who span { font-size: 12px; color: var(--ink-3); font-family: ui-monospace, Menlo, monospace; }
+  .hit .st { font-size: 11.5px; font-weight: 650; color: var(--warn); }
+  .hit .arrow { color: var(--ink-3); font-size: 14px; }
+  .hit:hover .arrow { color: var(--accent-text); }
+
+  /* guest workspace */
+  .cmd-bar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px; border-bottom: 1px solid var(--line-soft);
+    background: var(--bg);
+  }
+  .cmd-bar .who { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .guest-zone { flex: 1; overflow-y: auto; padding: 22px 24px; min-height: 0; }
+  .guest-empty {
+    height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; color: var(--ink-3); text-align: center;
+  }
+  .guest-empty svg { width: 34px; height: 34px; opacity: .5; }
+  .guest-empty b { color: var(--ink-2); font-size: 13.5px; font-weight: 600; }
+  .guest-empty span { font-size: 13px; }
+  .guest-card { display: none; max-width: 560px; }
+  .guest-card.show { display: block; }
+  .g-name { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
+  .g-meta { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .g-state {
+    margin-top: 16px; padding: 12px 14px; border-radius: 9px;
+    font-size: 13.5px; font-weight: 650; display: flex; align-items: baseline; gap: 8px;
+    border: 1px solid transparent;
+  }
+  .g-state small { font-weight: 500; opacity: .75; font-size: 12.5px; }
+  .g-state.good { background: color-mix(in srgb, var(--good) 10%, transparent); border-color: color-mix(in srgb, var(--good) 25%, transparent); color: var(--good); }
+  .g-state.warn { background: color-mix(in srgb, var(--warn) 10%, transparent); border-color: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); }
+  .g-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .g-sticker { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+  .g-sticker .lbl { font-size: 12px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .g-sticker .row { display: flex; gap: 8px; }
+  .g-sticker input { font-family: ui-monospace, Menlo, monospace; }
+  .linked-banner { margin-top: 12px; font-size: 13.5px; font-weight: 600; color: var(--good); }
+
+  /* buttons */
+  .btn {
+    border: none; cursor: pointer; font-size: 13px; font-weight: 600;
+    padding: 7px 13px; border-radius: 8px;
+    background: var(--ink); color: var(--bg);
+    transition: opacity .15s, transform .05s;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { opacity: .85; }
+  .btn:active:not(:disabled) { transform: scale(.97); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  .btn.ghost:hover:not(:disabled) { border-color: var(--ink-3); opacity: 1; }
+  .btn.accent { background: var(--accent); color: #042f2a; }
+  [data-theme="dark"] .btn.accent { color: #022c22; }
+
+  /* ============ gate: ops surface ============ */
+  .gate-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .kpi-strip {
+    flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid var(--line-soft); background: var(--bg);
+  }
+  .kpi { padding: 16px 20px 14px; border-right: 1px solid var(--line-soft); }
+  .kpi:last-child { border-right: none; }
+  .kpi b { display: block; font-size: 28px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .kpi span { font-size: 11.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+  .kpi.accent b { color: var(--accent-text); }
+  .gate-controls { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line-soft); background: var(--bg); }
+  .gate-controls .state { font-size: 13px; color: var(--ink-3); margin-left: auto; }
+  .table-wrap { flex: 1; overflow-y: auto; min-height: 0; }
+  .dense { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .dense th {
+    position: sticky; top: 0; background: var(--bg); z-index: 1;
+    text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-3);
+    padding: 8px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dense td { padding: 7px 16px; border-bottom: 1px solid var(--line-soft); }
+  .dense tr:hover td { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  .dense .t { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+  .dense .dir { color: var(--ink-2); font-weight: 600; font-size: 12px; }
+  .verdict { font-weight: 600; font-size: 12.5px; }
+  .verdict.ok { color: var(--good); }
+  .verdict.no { color: var(--warn); }
+  .table-empty { text-align: center; color: var(--ink-3); padding: 44px 0; font-size: 13.5px; }
+
+  /* activity drawer, bottom of gate view */
+  .activity-band {
+    flex: 0 0 150px; border-top: 1px solid var(--line-soft);
+    background: var(--bg); display: flex; flex-direction: column; min-height: 0;
+  }
+  .activity-band .band-head { flex: 0 0 auto; padding: 8px 20px 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line-soft); }
+  .feed { flex: 1; overflow-y: auto; padding: 6px 20px; min-height: 0; }
+  .feed .row { display: flex; gap: 10px; padding: 3px 0; font-size: 12.5px; }
+  .feed time { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-3); flex: 0 0 58px; padding-top: 1px; }
+  .feed .k { flex: 0 0 40px; font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding-top: 1px; }
+  .feed .k.err { color: var(--bad); } .feed .k.gate { color: var(--good); }
+  .feed .k.desk { color: var(--accent-text); } .feed .k.print { color: #c4b5fd; }
+  .feed .k.api { color: var(--warn); }
+  .feed .msg { flex: 1; min-width: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+  .feed .row.err .msg { color: var(--bad); }
+
+  /* ============ settings: sub-nav + form ============ */
+  .settings-wrap { flex: 1; display: flex; min-height: 0; }
+  .subnav {
+    flex: 0 0 190px; padding: 18px 12px;
+    border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .subnav .nav-lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); padding: 0 10px 8px; }
+  .subnav button {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 7px 10px; border: none; background: none; cursor: pointer;
+    font-size: 13px; font-weight: 550; color: var(--ink-2);
+    border-radius: 7px; text-align: left; transition: all .12s;
+  }
+  .subnav button svg { width: 15px; height: 15px; opacity: .75; }
+  .subnav button:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); }
+  .subnav button.active { background: var(--accent-dim); color: var(--accent-text); }
+  .settings-form { flex: 1; overflow-y: auto; min-width: 0; }
+  .form-inner { max-width: 640px; padding: 24px 32px 120px; }
+  .form-inner > h2 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; margin-bottom: 4px; }
+  .form-inner > .sub { font-size: 13px; color: var(--ink-3); margin-bottom: 24px; }
+  .form-section { display: none; }
+  .form-section.active { display: block; }
+  .frow { display: flex; align-items: flex-start; gap: 18px; padding: 13px 0; border-top: 1px solid var(--line-soft); }
+  .frow:first-of-type { border-top: none; }
+  .frow .f-lbl { flex: 0 0 180px; padding-top: 7px; }
+  .frow .f-lbl b { display: block; font-size: 13px; font-weight: 600; }
+  .frow .f-lbl span { display: block; font-size: 12px; color: var(--ink-3); margin-top: 2px; line-height: 1.4; }
+  .frow .f-ctl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .frow .f-ctl.inline { flex-direction: row; align-items: center; justify-content: space-between; }
+  .frow .hint { font-size: 12px; color: var(--ink-3); }
+  .savebar {
+    position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px;
+    margin: 26px -32px -120px; padding: 14px 32px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px); border-top: 1px solid var(--line-soft);
+  }
+  .savebar .result-line { margin: 0 0 0 auto; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 5px; }
+  .field .hint { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .switchline { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--line-soft); }
+  .switchline span { font-size: 13.5px; color: var(--ink-2); }
+  .switch { position: relative; width: 34px; height: 20px; flex: 0 0 auto; cursor: pointer; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .tr { position: absolute; inset: 0; border-radius: 99px; background: var(--line); transition: background .18s; }
+  .switch .tr::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 15px; height: 15px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .18s; }
+  .switch input:checked + .tr { background: var(--accent); }
+  .switch input:checked + .tr::after { transform: translateX(14px); }
+  .result-line { margin-top: 10px; font-size: 13px; min-height: 17px; color: var(--ink-3); }
+  .panel .btnrow { display: flex; gap: 8px; margin-top: 14px; }
+  .theme-row { display: flex; gap: 6px; }
+  .theme-row button {
+    flex: 1; padding: 8px 0; border: 1px solid var(--line); background: var(--inset);
+    color: var(--ink-3); border-radius: 8px; cursor: pointer;
+    font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 7px;
+    transition: all .15s;
+  }
+  .theme-row button svg { width: 14px; height: 14px; }
+  .theme-row button.active { border-color: var(--accent); color: var(--accent-text); background: var(--accent-dim); }
+
+  /* toast */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px; z-index: 50; left: auto;
+    transform: translateY(8px);
+    padding: 10px 15px; border-radius: 9px;
+    background: var(--surface); border: 1px solid var(--line);
+    color: var(--ink); font-size: 13.5px; font-weight: 600;
+    box-shadow: 0 8px 30px rgba(0,0,0,.3);
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s, transform .18s;
+    max-width: 380px;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+</style>
+</head>
+<body>
+
+<!-- ============ RAIL ============ -->
+<aside class="rail">
+  <div class="mark">DX</div>
+  <button class="active" data-view="desk" title="Desk (1)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM20 14v6h-6"/></svg>
+    <span>Desk</span>
+  </button>
+  <button data-view="gate" title="Gate (2)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg>
+    <span>Gate</span>
+  </button>
+  <button data-view="settings" title="Settings (3)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+    <span>Config</span>
+  </button>
+  <div class="spacer"></div>
+  <button class="theme-btn" id="theme-cycle" title="Theme: system — click to change">
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+    <svg class="icon-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/></svg>
+    <span id="theme-label">Auto</span>
+  </button>
+</aside>
+
+<!-- ============ SHELL ============ -->
+<div class="shell">
+  <header class="topbar">
+    <span class="title">DXRFID Bridge</span>
+    <span class="crumb" id="ver"></span>
+    <div class="pipes">
+      <span class="pipe" id="pipe-backend"><span class="led"></span>Backend</span>
+      <span class="pipe" id="pipe-gate"><span class="led"></span>Gate</span>
+      <span class="pipe" id="pipe-encoder"><span class="led"></span>Encoder</span>
+    </div>
+    <div class="right">
+      <span class="kbd-hint"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> switch view</span>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <!-- ============ DESK ============ -->
+    <section class="pane-view active" id="view-desk">
+      <div class="split-l">
+        <div class="pane-head"><h2>Scan or search</h2></div>
+        <div class="pane-body">
+          <div class="scanbox">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
+            <input id="scan" placeholder="Scan QR code…" autocomplete="off" autofocus />
+          </div>
+          <div class="seg" id="search-switch">
+            <button class="active" data-by="name">Name</button>
+            <button data-by="email">Email</button>
+            <button data-by="phone">Phone</button>
+          </div>
+          <input id="search" placeholder="Search attendees…" autocomplete="off" />
+          <div class="hits" id="search-results"></div>
+        </div>
+      </div>
+      <div class="split-r">
+        <div class="cmd-bar">
+          <span class="who" id="cmd-who">No guest selected</span>
+          <button class="btn ghost" id="btn-reprint" disabled>Reprint badge</button>
+          <button class="btn ghost" id="btn-next" disabled>Next guest</button>
+        </div>
+        <div class="guest-zone">
+          <div class="guest-empty" id="guest-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+            <b>Ready for the next guest</b>
+            <span>Scan a QR code or pick a search result on the left</span>
+          </div>
+          <div class="guest-card" id="guest-card">
+            <div class="g-name" id="g-name">—</div>
+            <div class="g-meta" id="g-meta">—</div>
+            <div class="g-state good" id="g-state"></div>
+            <div class="g-sticker" id="sticker-step">
+              <div class="lbl">Link sticker</div>
+              <div class="row">
+                <input id="sticker-uid" placeholder="Sticker UID — tap pad or type hex" autocomplete="off" />
+                <button class="btn ghost" id="btn-read-pad">Read pad</button>
+                <button class="btn accent" id="btn-bind">Link</button>
+              </div>
+              <div class="linked-banner" id="linked-ok" hidden>✓ Sticker linked — guest is gate-ready</div>
+            </div>
+          </div>
+        </div>
+        <div class="activity-band">
+          <div class="band-head">Activity</div>
+          <div class="feed" id="feed-desk"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GATE ============ -->
+    <section class="pane-view" id="view-gate">
+      <div class="gate-view">
+        <div class="kpi-strip">
+          <div class="kpi accent"><b id="dial-num">0</b><span>Inside now</span></div>
+          <div class="kpi"><b id="gate-in">0</b><span>Entered</span></div>
+          <div class="kpi"><b id="gate-out">0</b><span>Exited</span></div>
+          <div class="kpi"><b id="gate-failed">0</b><span>Send failures</span></div>
+        </div>
+        <div class="gate-controls">
+          <button class="btn accent" id="btn-gate-start">Start watch</button>
+          <button class="btn ghost" id="btn-gate-stop">Stop</button>
+          <span class="state" id="gate-state-text">Watch stopped</span>
+        </div>
+        <div class="table-wrap">
+          <table class="dense">
+            <thead><tr><th style="width:90px">Time</th><th>Guest / UID</th><th style="width:80px">Dir</th><th style="width:170px">Outcome</th></tr></thead>
+            <tbody id="passages"></tbody>
+          </table>
+          <div class="table-empty" id="passages-empty">No passages yet — start the gate watch.</div>
+        </div>
+        <div class="activity-band">
+          <div class="band-head">Activity</div>
+          <div class="feed" id="feed-gate"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="pane-view" id="view-settings">
+      <div class="settings-wrap">
+        <nav class="subnav" id="subnav">
+          <div class="nav-lbl">Settings</div>
+          <button class="active" data-section="appearance">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            Appearance</button>
+          <button data-section="backend">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6a8 3 0 0 1 16 0a8 3 0 0 1-16 0z"/><path d="M4 6v12a8 3 0 0 0 16 0V6"/><path d="M4 12a8 3 0 0 0 16 0"/></svg>
+            Backend</button>
+          <button data-section="gate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg>
+            Gate reader</button>
+          <button data-section="printer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg>
+            Printer</button>
+          <button data-section="encoder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v4M15 4v4M9 16v4M15 16v4M4 9h4M4 15h4M16 9h4M16 15h4"/></svg>
+            Encoder</button>
+        </nav>
+
+        <div class="settings-form">
+          <!-- Appearance -->
+          <div class="form-section active" id="section-appearance">
+            <div class="form-inner">
+              <h2>Appearance</h2>
+              <div class="sub">How the console looks on this PC.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>Theme</b><span>System follows your OS appearance automatically.</span></div>
+                <div class="f-ctl">
+                  <div class="theme-row" id="theme-row">
+                    <button data-theme-set="light">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                      Light</button>
+                    <button data-theme-set="dark">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+                      Dark</button>
+                    <button data-theme-set="system">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/></svg>
+                      System</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Backend -->
+          <div class="form-section" id="section-backend">
+            <div class="form-inner">
+              <h2>EventzFlow backend</h2>
+              <div class="sub">Where check-ins, bindings and gate sightings are sent.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>Backend URL</b><span>The event server's address.</span></div>
+                <div class="f-ctl"><input id="s-api-base" placeholder="https://eventzflow.com" /></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>API key</b><span>RFID-scope key from event settings.</span></div>
+                <div class="f-ctl">
+                  <input id="s-api-key" type="password" />
+                  <div class="hint" id="s-api-key-hint">Not set yet.</div>
+                </div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Station name</b><span>Shown in the panel's station list.</span></div>
+                <div class="f-ctl"><input id="s-station-name" /></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Station kind</b><span>What this PC does at the event.</span></div>
+                <div class="f-ctl">
+                  <select id="s-station-kind"><option value="desk">Desk</option><option value="gate">Gate</option></select>
+                </div>
+              </div>
+              <div class="savebar">
+                <button class="btn" id="btn-save-backend">Save changes</button>
+                <button class="btn ghost" id="btn-test-backend">Test connection</button>
+                <div class="result-line" id="test-backend-result"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gate -->
+          <div class="form-section" id="section-gate">
+            <div class="form-inner">
+              <h2>Gate reader</h2>
+              <div class="sub">The entrance/exit reader on the venue network, over TCP.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>Gate IP</b><span>Static IP of the reader.</span></div>
+                <div class="f-ctl"><input id="s-gate-host" /></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Port</b><span>Default 6688.</span></div>
+                <div class="f-ctl"><input id="s-gate-port" inputmode="numeric" /></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Direction</b><span>Which way this gate counts.</span></div>
+                <div class="f-ctl">
+                  <select id="s-gate-role"><option value="entry">Entry</option><option value="exit">Exit</option></select>
+                </div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Ignore same tag</b><span>Seconds before the same sticker counts again.</span></div>
+                <div class="f-ctl"><input id="s-dedup" inputmode="decimal" /></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Forwarding</b><span>Send sightings to EventzFlow as they happen.</span></div>
+                <div class="f-ctl inline">
+                  <span class="hint">Forward sightings to EventzFlow</span>
+                  <label class="switch"><input type="checkbox" id="s-auto-forward" /><span class="tr"></span></label>
+                </div>
+              </div>
+              <div class="savebar">
+                <button class="btn" id="btn-save-gate">Save changes</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Printer -->
+          <div class="form-section" id="section-printer">
+            <div class="form-inner">
+              <h2>Badge printer</h2>
+              <div class="sub">The event-printing app, running on this PC in direct mode.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>Printer app address</b><span>Loopback only — the printer app must be on this PC.</span></div>
+                <div class="f-ctl"><input id="s-printer-url" /></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Automatic printing</b><span>Print as soon as a guest checks in.</span></div>
+                <div class="f-ctl inline">
+                  <span class="hint">Print badge automatically on check-in</span>
+                  <label class="switch"><input type="checkbox" id="s-print-on-checkin" /><span class="tr"></span></label>
+                </div>
+              </div>
+              <div class="savebar">
+                <button class="btn" id="btn-save-printer">Save changes</button>
+                <button class="btn ghost" id="btn-test-printer">Test printer</button>
+                <div class="result-line" id="test-printer-result"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Encoder -->
+          <div class="form-section" id="section-encoder">
+            <div class="form-inner">
+              <h2>USB encoder</h2>
+              <div class="sub">The pad on the desk that reads and writes stickers.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>Reader model</b><span>From the label under the pad.</span></div>
+                <div class="f-ctl"><input id="s-encoder-model" /></div>
+              </div>
+              <div class="savebar">
+                <button class="btn" id="btn-save-encoder">Save changes</button>
+                <button class="btn ghost" id="btn-encoder-status">Check encoder</button>
+                <div class="result-line" id="encoder-status-result"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+/* ============ theme: light / dark / system, persisted ============ */
+const THEME_KEY = "dxb-theme";
+const themeOrder = ["system", "light", "dark"];
+let themeMode = localStorage.getItem(THEME_KEY) || "system";
+const osDark = matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme() {
+  // data-theme="system" lets the OS media query pick the palette (CSS below);
+  // a concrete value pins the palette. The rail icon reads data-theme directly.
+  const resolved = themeMode === "system" ? (osDark.matches ? "dark" : "light") : themeMode;
+  document.documentElement.dataset.theme = themeMode;
+  document.documentElement.style.colorScheme = resolved;
+  $("theme-label").textContent = themeMode === "system" ? "Auto" : (themeMode === "dark" ? "Dark" : "Light");
+  $("theme-cycle").title = `Theme: ${themeMode} — click to change`;
+  document.querySelectorAll("#theme-row button").forEach(b =>
+    b.classList.toggle("active", b.dataset.themeSet === themeMode));
+}
+$("theme-cycle").addEventListener("click", () => {
+  themeMode = themeOrder[(themeOrder.indexOf(themeMode) + 1) % themeOrder.length];
+  localStorage.setItem(THEME_KEY, themeMode);
+  applyTheme();
+});
+document.querySelectorAll("#theme-row button").forEach(b =>
+  b.addEventListener("click", () => {
+    themeMode = b.dataset.themeSet;
+    localStorage.setItem(THEME_KEY, themeMode);
+    applyTheme();
+  }));
+osDark.addEventListener("change", applyTheme);
+
+/* ============ API helper ============ */
+const api = async (path, body) => {
+  const opts = body === undefined ? {} : {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  };
+  const resp = await fetch(path, opts);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.ok === false) {
+    throw Object.assign(new Error(data.message || data.error || `HTTP ${resp.status}`), {data});
+  }
+  return data;
+};
+
+let toastTimer = null;
+const toast = (msg, isErr = false) => {
+  const el = $("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = "toast", 3200);
+};
+
+/* ============ views ============ */
+const viewOrder = ["desk", "gate", "settings"];
+function switchView(name) {
+  document.querySelectorAll(".rail button[data-view]").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === name));
+  document.querySelectorAll(".pane-view").forEach(v =>
+    v.classList.toggle("active", v.id === "view-" + name));
+  if (name === "desk") $("scan").focus();
+}
+document.querySelectorAll(".rail button[data-view]").forEach(b =>
+  b.addEventListener("click", () => switchView(b.dataset.view)));
+document.querySelectorAll("#subnav button").forEach(b =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#subnav button").forEach(x => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".form-section").forEach(s =>
+      s.classList.toggle("active", s.id === "section-" + b.dataset.section));
+  }));
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.matches("input, select, textarea")) return;
+  const idx = ["1", "2", "3"].indexOf(ev.key);
+  if (idx >= 0) switchView(viewOrder[idx]);
+});
+
+/* ============ status polling ============ */
+const setPipe = (id, state, text) => {
+  const el = $(id);
+  el.className = "pipe " + state;
+  el.innerHTML = `<span class="led"></span>${text}`;
+};
+
+async function pollStatus() {
+  try {
+    const s = await api("/api/status");
+    $("ver").textContent = "v" + (s.version || "");
+    if (!s.backend_configured) setPipe("pipe-backend", "", "Backend · not set");
+    else if (s.last_heartbeat_ok === true) setPipe("pipe-backend", "on", s.event_settings?.name || "Backend · OK");
+    else if (s.last_heartbeat_ok === false) setPipe("pipe-backend", "down", "Backend · unreachable");
+    else setPipe("pipe-backend", "", "Backend · untested");
+    setPipe("pipe-gate", s.gate_connected ? "on" : (s.gate_running ? "down" : ""),
+            s.gate_connected ? "Gate · linked" : (s.gate_running ? "Gate · down" : "Gate · off"));
+    const inside = Math.max(0, s.headcount_in - s.headcount_out);
+    $("dial-num").textContent = inside;
+    $("gate-in").textContent = s.headcount_in;
+    $("gate-out").textContent = s.headcount_out;
+    $("gate-failed").textContent = s.failed_count;
+    renderPassages(s.passages || []);
+    const gs = $("gate-state-text");
+    if (s.gate_running) {
+      gs.textContent = s.gate_connected ? "Watching — connected to the gate" : ("Reconnecting… " + (s.gate_last_error || ""));
+      gs.style.color = s.gate_connected ? "var(--good)" : "var(--warn)";
+    } else {
+      gs.textContent = "Watch stopped";
+      gs.style.color = "var(--ink-3)";
+    }
+  } catch { setPipe("pipe-backend", "down", "Bridge · down"); }
+  setTimeout(pollStatus, 2500);
+}
+
+async function pollEncoder() {
+  try {
+    const e = await api("/api/encoder/status");
+    setPipe("pipe-encoder", e.available ? "on" : "", e.available ? "Encoder · ready" : "Encoder · none");
+  } catch { setPipe("pipe-encoder", "", "Encoder · none"); }
+  setTimeout(pollEncoder, 8000);
+}
+
+/* ============ activity feeds ============ */
+let logCursor = null;
+const fmtTime = (ts) => new Date(ts * 1000).toLocaleTimeString([], {hour12: false});
+async function pollLog() {
+  try {
+    const url = logCursor ? `/api/log?since=${logCursor}` : "/api/log";
+    const {items, now} = await api(url);
+    logCursor = now;
+    for (const e of (items || []).slice().reverse()) {
+      for (const feedId of ["feed-desk", "feed-gate"]) {
+        const feed = $(feedId);
+        const row = document.createElement("div");
+        row.className = "row" + (e.kind === "err" ? " err" : "");
+        row.innerHTML = `<time>${fmtTime(e.ts)}</time><span class="k ${e.kind}">${e.kind}</span><span class="msg"></span>`;
+        row.querySelector(".msg").textContent = e.message;
+        feed.prepend(row);
+        while (feed.children.length > 100) feed.lastChild.remove();
+      }
+    }
+  } catch {}
+  setTimeout(pollLog, 2000);
+}
+
+/* ============ passages ============ */
+function renderPassages(list) {
+  const tb = $("passages");
+  tb.innerHTML = "";
+  $("passages-empty").style.display = list.length ? "none" : "block";
+  for (const p of list.slice(0, 60)) {
+    const tr = document.createElement("tr");
+    const ok = p.outcome === "accepted";
+    tr.innerHTML = `<td class="t">${fmtTime(p.ts)}</td><td></td>
+      <td><span class="dir">${p.role === "exit" ? "← out" : "→ in"}</span></td>
+      <td><span class="verdict ${ok ? "ok" : "no"}">${(p.outcome || "").replaceAll("_", " ")}</span></td>`;
+    tr.children[1].textContent = p.name || p.uid;
+    if (p.anomalies && p.anomalies.length) tr.children[3].title = p.anomalies.join(", ");
+    tb.appendChild(tr);
+  }
+}
+
+/* ============ desk flow ============ */
+let currentGuest = null;
+let searchBy = "name", searchTimer = null, searchSeq = 0;
+
+$("search-switch").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button"); if (!btn) return;
+  searchBy = btn.dataset.by;
+  document.querySelectorAll("#search-switch button").forEach(b => b.classList.toggle("active", b === btn));
+  $("search").focus();
+  runSearch();
+});
+
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 300);
+});
+
+async function runSearch() {
+  const q = $("search").value.trim();
+  const seq = ++searchSeq;
+  const box = $("search-results");
+  if (!q) { box.innerHTML = ""; return; }
+  try {
+    const data = await api("/api/desk/search", {by: searchBy, q});
+    if (seq !== searchSeq) return;
+    box.innerHTML = "";
+    for (const t of (data.tickets || []).slice(0, 10)) {
+      const hit = document.createElement("button");
+      hit.className = "hit";
+      const hint = t.email_hint || t.phone_hint || "";
+      hit.innerHTML = `<div class="who"><b></b><span>${t.ticket_type || ""}${hint ? " · " + hint : ""}</span></div>
+        ${t.checked_in ? '<span class="st">In</span>' : ""}<span class="arrow">→</span>`;
+      hit.querySelector("b").textContent = t.name;
+      hit.addEventListener("click", () => scanTicket(t.public_id));
+      box.appendChild(hit);
+    }
+    if (!(data.tickets || []).length) {
+      box.innerHTML = `<div class="table-empty" style="padding:16px 0">${data.hint || "No matches."}</div>`;
+    }
+  } catch {}
+}
+
+$("scan").addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter") return;
+  const v = $("scan").value.trim();
+  if (v) { scanTicket(v); $("scan").value = ""; }
+});
+
+async function scanTicket(publicId) {
+  try {
+    const {card} = await api("/api/desk/scan", {public_id: publicId});
+    showGuest(card);
+  } catch (e) { toast(e.message, true); }
+}
+
+function showGuest(card) {
+  const t = card.ticket || {};
+  currentGuest = {public_id: t.public_id, name: t.name};
+  const fresh = card.check_in && card.check_in.result === "checked_in";
+  $("guest-empty").style.display = "none";
+  $("guest-card").classList.add("show");
+  $("cmd-who").textContent = t.name || "Unknown";
+  $("btn-reprint").disabled = false;
+  $("btn-next").disabled = false;
+  $("g-name").textContent = t.name || "Unknown";
+  $("g-meta").textContent = `${t.ticket_type || ""} · ${t.public_id || ""}`;
+  const st = $("g-state");
+  if (fresh) {
+    st.className = "g-state good";
+    st.innerHTML = card.printed
+      ? `Checked in — badge printing`
+      : card.print_error
+        ? `Checked in <small>badge not printed — press Reprint</small>`
+        : `Checked in`;
+  } else {
+    st.className = "g-state warn";
+    const when = (card.check_in?.checked_in_at || "").replace("T", " ").slice(0, 16);
+    st.innerHTML = `Already checked in <small>first scanned ${when}</small>`;
+  }
+  $("linked-ok").hidden = true;
+  $("sticker-uid").value = "";
+  $("sticker-step").style.display = card.binding ? "none" : "block";
+  $("search-results").innerHTML = "";
+  $("search").value = "";
+}
+
+$("btn-reprint").addEventListener("click", async () => {
+  if (!currentGuest) return;
+  try {
+    await api("/api/desk/reprint", {public_id: currentGuest.public_id});
+    toast("Badge sent to printer");
+  } catch (e) { toast(e.message, true); }
+});
+
+$("btn-next").addEventListener("click", async () => {
+  if (currentGuest) { try { await api("/api/desk/cancel", {public_id: currentGuest.public_id}); } catch {} }
+  currentGuest = null;
+  $("guest-card").classList.remove("show");
+  $("guest-empty").style.display = "flex";
+  $("cmd-who").textContent = "No guest selected";
+  $("btn-reprint").disabled = true;
+  $("btn-next").disabled = true;
+  $("scan").focus();
+});
+
+$("btn-read-pad").addEventListener("click", async () => {
+  try {
+    const {tags} = await api("/api/encoder/read", {});
+    if (tags && tags.length) $("sticker-uid").value = tags[0].uid_hex;
+    else toast("Nothing on the pad", true);
+  } catch (e) { toast(e.message, true); }
+});
+
+$("btn-bind").addEventListener("click", async () => {
+  if (!currentGuest) return;
+  const uid = $("sticker-uid").value.trim();
+  if (!uid) { toast("Read or type the sticker UID first", true); return; }
+  try {
+    await api("/api/desk/bind", {public_id: currentGuest.public_id, uid_hex: uid});
+    $("linked-ok").hidden = false;
+  } catch (e) { toast(e.message, true); }
+});
+
+/* ============ gate controls ============ */
+$("btn-gate-start").addEventListener("click", async () => {
+  try { await api("/api/gate/start", {}); } catch (e) { toast(e.message, true); }
+});
+$("btn-gate-stop").addEventListener("click", async () => {
+  try { await api("/api/gate/stop", {}); } catch (e) { toast(e.message, true); }
+});
+
+/* ============ settings ============ */
+const SETTING_FIELDS = {
+  "s-api-base": "api_base", "s-station-name": "station_name",
+  "s-station-kind": "station_kind", "s-gate-host": "gate_host",
+  "s-gate-port": "gate_port", "s-gate-role": "gate_role",
+  "s-dedup": "dedup_seconds", "s-printer-url": "printer_url",
+  "s-encoder-model": "encoder_model",
+};
+
+async function loadSettings() {
+  try {
+    const s = await api("/api/settings");
+    for (const [id, key] of Object.entries(SETTING_FIELDS)) {
+      if (s[key] !== undefined) $(id).value = s[key];
+    }
+    $("s-auto-forward").checked = !!s.auto_forward;
+    $("s-print-on-checkin").checked = !!s.print_on_check_in;
+    $("s-api-key").placeholder = s.api_key_set ? `Stored (${s.api_key_hint}) — type to replace` : "Paste RFID API key";
+    if (s.api_key_set) $("s-api-key-hint").textContent = `Stored key ${s.api_key_hint}. Leave blank to keep it.`;
+  } catch {}
+}
+
+const saveSettings = async (fields) => {
+  const body = {};
+  for (const f of fields) {
+    if (f === "s-api-key") { if ($("s-api-key").value) body.api_key = $("s-api-key").value; }
+    else if (f === "s-auto-forward") body.auto_forward = $("s-auto-forward").checked;
+    else if (f === "s-print-on-checkin") body.print_on_check_in = $("s-print-on-checkin").checked;
+    else body[SETTING_FIELDS[f]] = $(f).value;
+  }
+  await api("/api/settings", body);
+  toast("Saved");
+};
+
+$("btn-save-backend").addEventListener("click", () =>
+  saveSettings(["s-api-base", "s-api-key", "s-station-name", "s-station-kind"]).catch(e => toast(e.message, true)));
+$("btn-save-gate").addEventListener("click", () =>
+  saveSettings(["s-gate-host", "s-gate-port", "s-gate-role", "s-dedup", "s-auto-forward"]).catch(e => toast(e.message, true)));
+$("btn-save-printer").addEventListener("click", () =>
+  saveSettings(["s-printer-url", "s-print-on-checkin"]).catch(e => toast(e.message, true)));
+$("btn-save-encoder").addEventListener("click", () =>
+  saveSettings(["s-encoder-model"]).catch(e => toast(e.message, true)));
+
+$("btn-test-backend").addEventListener("click", async () => {
+  const el = $("test-backend-result");
+  el.textContent = "Checking…"; el.style.color = "var(--ink-3)";
+  try {
+    const r = await api("/api/test/backend", {});
+    el.textContent = r.ok ? `✓ Connected — ${(r.event || {}).name || "?"}` : `✗ ${r.message}`;
+    el.style.color = r.ok ? "var(--good)" : "var(--bad)";
+  } catch (e) { el.textContent = "✗ " + e.message; el.style.color = "var(--bad)"; }
+});
+
+$("btn-test-printer").addEventListener("click", async () => {
+  const el = $("test-printer-result");
+  el.textContent = "Checking…"; el.style.color = "var(--ink-3)";
+  try {
+    const r = await api("/api/test/printer", {});
+    el.textContent = r.ok ? `✓ ${(r.health || {}).printer || "Printer ready"}` : `✗ ${r.message}`;
+    el.style.color = r.ok ? "var(--good)" : "var(--bad)";
+  } catch (e) { el.textContent = "✗ " + e.message; el.style.color = "var(--bad)"; }
+});
+
+$("btn-encoder-status").addEventListener("click", async () => {
+  const el = $("encoder-status-result");
+  el.textContent = "Checking…"; el.style.color = "var(--ink-3)";
+  try {
+    const r = await api("/api/encoder/status");
+    el.textContent = r.detail || (r.available ? "Ready" : "Not found");
+    el.style.color = r.available ? "var(--good)" : "var(--warn)";
+  } catch (e) { el.textContent = e.message; el.style.color = "var(--bad)"; }
+});
+
+/* ============ boot ============ */
+applyTheme();
+loadSettings();
+pollStatus();
+pollEncoder();
+pollLog();
+</script>
+</body>
+</html>

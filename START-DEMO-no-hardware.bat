@@ -2,9 +2,9 @@
 REM ===================================================================
 REM  DXRFID Bridge - DEMO mode (no RFID hardware needed)
 REM
-REM  Same as START-HERE.bat, but also runs a fake reader and a fake
-REM  EventzFlow server, so you can click around a fully working
-REM  dashboard on any PC. Nothing here touches real hardware.
+REM  Runs the bridge against a fake EventzFlow backend that speaks the
+REM  real RFID device contract, plus a fake gate reader on TCP. You can
+REM  click through the full desk + gate flow on any PC.
 REM ===================================================================
 setlocal
 cd /d "%~dp0"
@@ -13,7 +13,7 @@ title DXRFID Bridge (demo)
 echo.
 echo   ============================================
 echo     DXRFID Bridge - DEMO MODE
-echo     ^(fake reader, fake server, no hardware^)
+echo     ^(fake backend, fake gate, no hardware^)
 echo   ============================================
 echo.
 
@@ -31,36 +31,38 @@ if not defined PY (
 )
 echo   [ok] Python found
 
-set "DASH_PORT=5050"
-set "READER_PORT=6688"
-set "FAKE_API_PORT=9000"
+set "PORT=5050"
+set "GATE_PORT=6688"
+set "API_PORT=9100"
+set "API_KEY=demo-key"
 
-echo   [..] Starting fake reader on port %READER_PORT%
-start "DXRFID mock reader" /min %PY% "app\mock_reader.py" --port %READER_PORT%
+echo   [..] Starting fake gate reader on port %GATE_PORT%
+start "DXRFID mock gate" /min %PY% "app\mock_reader.py" --port %GATE_PORT%
 
-echo   [..] Starting fake EventzFlow server on port %FAKE_API_PORT%
-start "DXRFID mock api" /min %PY% "app\mock_eventzflow.py" --port %FAKE_API_PORT%
+echo   [..] Starting mock EventzFlow backend on port %API_PORT%
+start "DXRFID mock backend" /min %PY% "app\mock_rfid_backend.py" --port %API_PORT% --api-key %API_KEY%
 
-echo   [..] Starting dashboard on port %DASH_PORT%
-start "DXRFID dashboard" /min %PY% "app\server.py" --port %DASH_PORT%
+echo   [..] Starting bridge on port %PORT%
+start "DXRFID bridge" /min %PY% "app\server.py" --port %PORT%
 
 timeout /t 2 /nobreak >nul
-start "" "http://localhost:%DASH_PORT%"
+start "" "http://localhost:%PORT%"
 
 echo.
 echo   ============================================
 echo     Demo running.
 echo.
-echo     Dashboard:    http://localhost:%DASH_PORT%
-echo     Fake server:  http://localhost:%FAKE_API_PORT%
+echo     Console:       http://localhost:%PORT%
+echo     Mock backend:  http://localhost:%API_PORT%  ^(ticket list^)
 echo.
 echo     Try this:
-echo       1. Press Connect ^(already points at the fake reader^)
-echo       2. Settings tab - API URL:
-echo            http://127.0.0.1:%FAKE_API_PORT%/events
-echo          then Save Settings
-echo       3. Test tab - Read Tags
-echo       4. Dashboard - Auto-Forward - Turn On
+echo       1. Settings -^> Backend URL  http://127.0.0.1:%API_PORT%
+echo          API key  %API_KEY%  -^> Save -^> Test connection
+echo       2. Settings -^> Gate IP 127.0.0.1 port %GATE_PORT% -^> Save
+echo       3. Open the mock backend page and copy a ticket UUID
+echo       4. Desk tab -^> paste it in "Scan QR" -^> Enter
+echo       5. Link a sticker ^(type any 16-hex UID^), then Gate -^>
+echo          Start watch and copy that UID when the mock shows tags
 echo.
 echo     Press any key in THIS window to stop.
 echo   ============================================
@@ -68,9 +70,9 @@ echo.
 pause >nul
 
 echo   Stopping...
-taskkill /f /fi "WINDOWTITLE eq DXRFID dashboard*"   >nul 2>&1
-taskkill /f /fi "WINDOWTITLE eq DXRFID mock reader*" >nul 2>&1
-taskkill /f /fi "WINDOWTITLE eq DXRFID mock api*"    >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq DXRFID bridge*"       >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq DXRFID mock gate*"    >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq DXRFID mock backend*" >nul 2>&1
 echo   Stopped.
 timeout /t 1 /nobreak >nul
 exit /b 0
