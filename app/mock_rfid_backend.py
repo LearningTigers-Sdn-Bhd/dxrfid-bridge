@@ -22,9 +22,13 @@ Seeded demo tickets are printed at startup.
 """
 import argparse
 import json
+import sys
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 STATE = {
     "api_key": "demo-key",

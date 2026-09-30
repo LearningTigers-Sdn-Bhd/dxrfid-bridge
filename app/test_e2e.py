@@ -19,6 +19,10 @@ import threading
 import time
 import urllib.request
 
+# Windows runners default stdout to cp1252 — the ✓ marks below crash there.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 os.environ["DXRFID_BRIDGE_DATA"] = tempfile.mkdtemp(prefix="dxrfid-test-")
