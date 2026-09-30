@@ -14,4 +14,4 @@ Modules:
     server    — HTTP API + serves the dark ops console UI
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

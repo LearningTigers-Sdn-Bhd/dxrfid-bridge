@@ -650,6 +650,25 @@
                 <button class="btn ghost" id="btn-encoder-status">Check encoder</button>
                 <div class="result-line" id="encoder-status-result"></div>
               </div>
+
+              <h2 style="margin-top:34px">Sticker read test</h2>
+              <div class="sub">Prove the pad can see a sticker before event day. No data is written — this only reads.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>1 · Place a sticker</b><span>Lay one sticker flat on the pad, nothing else on it.</span></div>
+                <div class="f-ctl"><span class="hint">The pad beeps or lights up on most models when a sticker is in range.</span></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>2 · Read it</b><span>The bridge opens the pad and reads what's on it.</span></div>
+                <div class="f-ctl">
+                  <button class="btn accent" id="btn-test-read" style="width:fit-content">Read sticker</button>
+                </div>
+              </div>
+              <div class="frow" id="read-result-row" hidden>
+                <div class="f-lbl"><b>3 · Result</b><span>What the pad saw.</span></div>
+                <div class="f-ctl">
+                  <div id="read-result"></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1051,6 +1070,44 @@ $("btn-encoder-status").addEventListener("click", async () => {
     el.textContent = r.detail || (r.available ? "Ready" : "Not found");
     el.style.color = r.available ? "var(--good)" : "var(--warn)";
   } catch (e) { el.textContent = e.message; el.style.color = "var(--bad)"; }
+});
+
+/* ============ encoder sticker test ============ */
+$("btn-test-read").addEventListener("click", async () => {
+  const row = $("read-result-row");
+  const out = $("read-result");
+  row.hidden = false;
+  out.innerHTML = `<span class="hint">Reading the pad…</span>`;
+  const btn = $("btn-test-read");
+  btn.disabled = true;
+  try {
+    const {tags} = await api("/api/encoder/read", {});
+    if (tags && tags.length === 1) {
+      out.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="color:var(--good);font-weight:700">✓ Sticker read</span>
+          <code style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;
+            background:var(--inset);border:1px solid var(--line);border-radius:7px;
+            padding:5px 10px;letter-spacing:.04em">${tags[0].uid_hex}</code>
+        </div>
+        <div class="hint" style="margin-top:8px">The pad and driver work. You can copy this UID to test a link on the Desk tab.</div>`;
+    } else if (tags && tags.length > 1) {
+      out.innerHTML = `
+        <div style="color:var(--warn);font-weight:700">⚠ ${tags.length} stickers seen</div>
+        <div class="hint" style="margin-top:6px">${tags.map(t => t.uid_hex).join("<br>")}</div>
+        <div class="hint" style="margin-top:8px">Reading works, but keep ONE sticker on the pad at the desk — otherwise the wrong one may get linked.</div>`;
+    } else {
+      out.innerHTML = `
+        <div style="color:var(--warn);font-weight:700">Nothing on the pad</div>
+        <div class="hint" style="margin-top:6px">The pad opened but saw no sticker. Lay one flat on it and try again — if it still sees nothing, the sticker may be the wrong type (needs ISO 15693).</div>`;
+    }
+  } catch (e) {
+    out.innerHTML = `
+      <div style="color:var(--bad);font-weight:700">✗ Could not read</div>
+      <div class="hint" style="margin-top:6px">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 /* ============ updates ============ */
