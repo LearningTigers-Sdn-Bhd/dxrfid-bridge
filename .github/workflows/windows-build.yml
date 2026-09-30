@@ -1,0 +1,78 @@
+name: windows-build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+  # Release build: git tag bridge-v0.2.0 && git push origin bridge-v0.2.0
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Version to release, e.g. 0.2.0 (creates tag + GitHub Release)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run end-to-end suite
+        run: python app/test_e2e.py
+
+  build:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.release_version }}"
+          if (-not $v) { $v = "0.0.0-dev" }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Stamp build version
+        run: |
+          "BUILD_VERSION = `"${{ steps.ver.outputs.version }}`"" | Out-File -FilePath app/bridge/_build_version.py -Encoding utf8
+
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+
+      - name: Build exe
+        run: python -m PyInstaller --noconfirm --clean build/dxrfid-bridge.spec --distpath dist --workpath build/work
+
+      - name: Smoke check artifact
+        run: |
+          if (-not (Test-Path dist/dxrfid-bridge.exe)) { throw "exe missing" }
+          (Get-Item dist/dxrfid-bridge.exe).Length | Out-Host
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dxrfid-bridge-windows-x64
+          path: dist/dxrfid-bridge.exe
+          retention-days: 30
+
+      - name: Create release on manual dispatch
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "bridge-v${{ github.event.inputs.release_version }}"
+          git tag $tag
+          git push origin $tag
+          gh release create $tag dist/dxrfid-bridge.exe `
+            --title "DXRFID Bridge ${{ github.event.inputs.release_version }}" `
+            --notes "Single-file Windows build. Replace dxrfid-bridge.exe with this one to update." `
+            --latest

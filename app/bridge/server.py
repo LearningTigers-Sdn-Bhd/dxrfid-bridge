@@ -33,7 +33,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__
+from . import __version__, updates
 from .client import ApiError
 from .desk import DeskFlow
 from .encoder import ECRFIDEncoder, EncoderUnavailable, probe as encoder_probe
@@ -95,9 +95,11 @@ def make_handler(rt: Runtime, gate: GateFlow | None = None):
                     self._serve_ui()
                 elif path == "/api/status":
                     self._json(rt.snapshot() | {
-                        "version": __version__,
+                        "version": updates.current_version(),
                         "gate_running": gate.running,
                     })
+                elif path == "/api/update/check":
+                    self._json(updates.check_latest())
                 elif path == "/api/log":
                     since = float(query["since"][0]) if query.get("since") else None
                     items, now = rt.log_since(since)

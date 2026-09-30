@@ -512,6 +512,9 @@
           <button data-section="encoder">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v4M15 4v4M9 16v4M15 16v4M4 9h4M4 15h4M16 9h4M16 15h4"/></svg>
             Encoder</button>
+          <button data-section="updates">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+            Updates</button>
         </nav>
 
         <div class="settings-form">
@@ -646,6 +649,32 @@
                 <button class="btn" id="btn-save-encoder">Save changes</button>
                 <button class="btn ghost" id="btn-encoder-status">Check encoder</button>
                 <div class="result-line" id="encoder-status-result"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Updates -->
+          <div class="form-section" id="section-updates">
+            <div class="form-inner">
+              <h2>Updates</h2>
+              <div class="sub">The bridge checks GitHub for a newer build.</div>
+              <div class="frow">
+                <div class="f-lbl"><b>This version</b><span>The build running on this PC.</span></div>
+                <div class="f-ctl"><span class="hint" id="upd-current" style="font-family:ui-monospace,Menlo,monospace">…</span></div>
+              </div>
+              <div class="frow">
+                <div class="f-lbl"><b>Latest release</b><span>Newest build published on GitHub.</span></div>
+                <div class="f-ctl"><span class="hint" id="upd-latest">Not checked yet</span></div>
+              </div>
+              <div class="savebar">
+                <button class="btn" id="btn-check-update">Check for update</button>
+                <button class="btn accent" id="btn-download-update" hidden>Download update</button>
+                <div class="result-line" id="upd-result"></div>
+              </div>
+              <div class="hint" id="upd-howto" hidden style="margin-top:14px; line-height:1.6">
+                To finish the update: close the bridge (close its console window),
+                replace <b>dxrfid-bridge.exe</b> with the downloaded file, then start it again.
+                Your settings and data are kept — they live in your user folder, not in the exe.
               </div>
             </div>
           </div>
@@ -1024,12 +1053,52 @@ $("btn-encoder-status").addEventListener("click", async () => {
   } catch (e) { el.textContent = e.message; el.style.color = "var(--bad)"; }
 });
 
+/* ============ updates ============ */
+let updateInfo = null;
+$("btn-check-update").addEventListener("click", async () => {
+  const res = $("upd-result");
+  res.textContent = "Checking…"; res.style.color = "var(--ink-3)";
+  $("btn-download-update").hidden = true;
+  $("upd-howto").hidden = true;
+  try {
+    const r = await api("/api/update/check");
+    updateInfo = r;
+    $("upd-current").textContent = "v" + (r.current || "?");
+    if (!r.ok) {
+      $("upd-latest").textContent = "Could not check";
+      res.textContent = r.error || "GitHub unreachable";
+      res.style.color = "var(--bad)";
+      return;
+    }
+    $("upd-latest").textContent = r.latest || "No release yet";
+    if (r.update_available) {
+      res.textContent = `Update available — ${r.latest}`;
+      res.style.color = "var(--good)";
+      if (r.exe_url) {
+        $("btn-download-update").hidden = false;
+        $("upd-howto").hidden = false;
+      }
+    } else {
+      res.textContent = "You're on the latest version";
+      res.style.color = "var(--good)";
+    }
+  } catch (e) {
+    res.textContent = e.message;
+    res.style.color = "var(--bad)";
+  }
+});
+$("btn-download-update").addEventListener("click", () => {
+  if (updateInfo && updateInfo.exe_url) window.open(updateInfo.exe_url, "_blank");
+});
+
 /* ============ boot ============ */
 applyTheme();
 loadSettings();
 pollStatus();
 pollEncoder();
 pollLog();
+// show current version in Updates without a network call
+api("/api/status").then(s => { $("upd-current").textContent = "v" + (s.version || "?"); }).catch(() => {});
 </script>
 </body>
 </html>

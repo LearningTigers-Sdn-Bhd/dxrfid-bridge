@@ -18,3 +18,8 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Build output
+dist/
+build/work/
+app/bridge/_build_version.py
